@@ -231,7 +231,7 @@ class GPT(nn.Module):
         # On vérifie que le type de modèle demandé existe bien
         assert model_type in {'gpt2', 'gpt2-medium', 'gpt2-large', 'gpt2-xl'}
         from transformers import GPT2LMHeadModel
-        print("Chargement des poids depuis le modèle pré-entraîné : %s" % model_type)
+        print("Chargement des poids depuis le modele pre-entraine : %s" % model_type)
 
         # Configuration du modèle selon sa taille
         # Plus le modèle est grand, plus il a de paramètres et plus il est puissant
@@ -285,9 +285,40 @@ class GPT(nn.Module):
 
         return model
 
-    # --------------------------------------------------------------------------------------------------
+# --------------------------------------------------------------------------------------------------
+
+num_return_sequences = 5
+max_length = 30
 
 model = GPT.from_pretrained('gpt2')
-print("pas de bug!")
+model.eval()
+model.to('cuda')
+
+# on utilise le tokenizer gpt2 d'openai
+import tiktoken
+enc = tiktoken.get_encoding("gpt2")
+tokens = enc.encode("Hello, I'm a language model")
+tokens = torch.tensor(tokens, dtype=torch.long)
+tokens = tokens.unsqueeze(0).repeat(num_return_sequences, 1)
+x = tokens.to('cuda')
+
+# génération
+torch.manual_seed(42)
+torch.cuda.manual_seed(42)
+while x.size(1) < max_length:
+    with torch.no_grad():
+        logits = model(x)
+        logits = logits[:, -1, :] 
+        probs = F.softmax(logits, dim=-1)
+        topk_probs, topk_indices = torch.topk(probs, 50, dim=-1)
+        ix = torch.multinomial(topk_probs, 1)
+        xcol = torch.gather(topk_indices, -1, ix)
+        x = torch.cat((x, xcol), dim=1)
+        
+# affiche le texte généré
+for i in range(num_return_sequences):
+    tokens = x[i, :max_length].tolist()
+    decoded = enc.decode(tokens)
+    print(">",decoded)
 
 
