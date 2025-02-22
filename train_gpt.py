@@ -86,9 +86,9 @@ class MLP(nn.Module):
 
     def __init__(self, config):
         super().__init__()
-        self.c_fc = nn.Linear(config.n_embd, 4 * config.n_embd, bias=False)
+        self.c_fc = nn.Linear(config.n_embd, 4 * config.n_embd)
         self.gelu = nn.GELU(approximate="tanh")
-        self.c_proj = nn.Linear(4 * config.n_embd, config.n_embd, bias=False)
+        self.c_proj = nn.Linear(4 * config.n_embd, config.n_embd)
     
     def forward(self, x):
         """Applique la transformation MLP sur l'entrée.
@@ -206,4 +206,88 @@ class GPT(nn.Module):
             ln_f = nn.LayerNorm(config.n_embd),  # Normalisation finale
         ))
         self.lm_head = nn.Linear(config.n_embd, config.vocab_size, bias=False)  # Projection vers le vocabulaire
+    
+    def forward(self, idx):
+        B, T = idx.size()
+        assert T <= self.config.block_size, f"Cannot forward sequence of length {T}, block size is only {self.config.block_size}"
+
+        pos = torch.arange(0, T, dtype=torch.long, device=idx.device)
+        pos_emd = self.transformer.wpe(pos)
+        tok_emd = self.transformer.wte(idx)
+        x = tok_emd + pos_emd
+        for block in self.transformer.h:
+            x = block(x)
+        x = self.transformer.ln_f(x)
+        logits = self.lm_head(x)
+        return logits
+
+    @classmethod
+    def from_pretrained(cls, model_type):
+        """Charge les poids d'un modèle GPT-2 pré-entraîné depuis Huggingface
+        
+        Cette méthode permet de récupérer un modèle GPT-2 déjà entraîné, plutôt que de
+        partir de zéro. 
+        """
+        # On vérifie que le type de modèle demandé existe bien
+        assert model_type in {'gpt2', 'gpt2-medium', 'gpt2-large', 'gpt2-xl'}
+        from transformers import GPT2LMHeadModel
+        print("Chargement des poids depuis le modèle pré-entraîné : %s" % model_type)
+
+        # Configuration du modèle selon sa taille
+        # Plus le modèle est grand, plus il a de paramètres et plus il est puissant
+        config_args = {
+            'gpt2':         dict(n_layer=12, n_head=12, n_embd=768),  # 124M paramètres - Version de base
+            'gpt2-medium':  dict(n_layer=24, n_head=16, n_embd=1024), # 350M paramètres - Version moyenne
+            'gpt2-large':   dict(n_layer=36, n_head=20, n_embd=1280), # 774M paramètres - Grande version
+            'gpt2-xl':      dict(n_layer=48, n_head=25, n_embd=1600), # 1558M paramètres - Version extra large
+        }[model_type]
+        
+        # Paramètres fixes pour tous les modèles GPT-2
+        config_args['vocab_size'] = 50257  # Taille du vocabulaire (nombre de mots que connaît le modèle)
+        config_args['block_size'] = 1024   # Longueur maximale du texte que le modèle peut traiter
+
+        # Création de notre modèle vide
+        config = GPTConfig(**config_args)
+        model = GPT(config)
+        sd = model.state_dict()
+        sd_keys = sd.keys()
+        # On retire certains éléments techniques qui ne sont pas des paramètres à copier
+        sd_keys = [k for k in sd_keys if not k.endswith('.attn.bias')]
+
+        # Chargement du modèle pré-entraîné depuis Huggingface
+        model_hf = GPT2LMHeadModel.from_pretrained(model_type)
+        sd_hf = model_hf.state_dict()
+
+        sd_keys_hf = sd_hf.keys()
+        # On retire certains éléments techniques qui ne sont pas des paramètres à copier
+        sd_keys_hf = [k for k in sd_keys_hf if not k.endswith('.attn.masked_bias')]
+        sd_keys_hf = [k for k in sd_keys_hf if not k.endswith('.attn.bias')]
+        
+        # Liste des paramètres qui nécessitent une transposition
+        # (comme retourner une matrice pour qu'elle soit dans le bon sens)
+        transposed = ['attn.c_attn.weight', 'attn.c_proj.weight', 'mlp.c_fc.weight', 'mlp.c_proj.weight']
+
+        # Vérification que les deux modèles ont le même nombre de paramètres
+        assert len(sd_keys_hf) == len(sd_keys), f"Nombre de paramètres différent : {len(sd_keys_hf)} != {len(sd_keys)}"
+
+        # Copie des paramètres du modèle pré-entraîné vers notre modèle
+        for k in sd_keys_hf:
+            if any(k.endswith(w) for w in transposed):
+                # Certains paramètres doivent être transposés avant la copie
+                assert sd_hf[k].shape[::-1] == sd[k].shape
+                with torch.no_grad():
+                    sd[k].copy_(sd_hf[k].t())
+            else:
+                # Copie simple pour les autres paramètres
+                assert sd_hf[k].shape == sd[k].shape
+                with torch.no_grad():
+                    sd[k].copy_(sd_hf[k])
+
+        return model
+
+    # --------------------------------------------------------------------------------------------------
+
+model = GPT.from_pretrained('gpt2')
+print("pas de bug!")
+
 
