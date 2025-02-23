@@ -456,25 +456,25 @@ prompts_test = [
 ]
 
 # Paramètres ajustés pour A100
-B = 32                    # Doublé (était 16)
-T = 1024                  # OK
-total_batch_size = 524288 # 2**19 - Doublé aussi
+B = 32                    
+T = 1024                  
+total_batch_size = 524288 # 2**19 
 
 # Paramètres d'apprentissage optimisés
-max_lr = 3e-4            # Learning rate légèrement réduit pour plus de stabilité
+max_lr = 3e-4            
 min_lr = max_lr * 0.1
-warmup_steps = 300       # Plus de steps de warmup
-max_steps = 6000         # Plus d'étapes d'entraînement
+warmup_steps = 300       
+max_steps = 6000         
 
 # Activer la compilation torch pour de meilleures performances
 use_compile = True       # Activation de torch.compile()
 
-# 1. Optimisations CUDA
+# Optimisations CUDA
 torch.backends.cuda.matmul.allow_tf32 = True  # Permet TF32 sur A100
 torch.backends.cudnn.benchmark = True         # Optimise les convolutions
 
 
-# 3. Optimise le DataLoader
+# Optimise le DataLoader
 grad_accum_steps = total_batch_size // (B * T * ddp_world_size)
 train_loader = DataLoaderLite(
     B=B, 
@@ -482,7 +482,7 @@ train_loader = DataLoaderLite(
     process_rank=ddp_rank,
     num_processes=ddp_world_size,
     split="train",
-    num_workers=4  # Ajouter du multiprocessing pour le chargement
+    num_workers=4 
 )
 val_loader = DataLoaderLite(B=B, T=T, process_rank=ddp_rank, num_processes=ddp_world_size, split="val")
 
@@ -499,26 +499,26 @@ if ddp:
 raw_model = model.module if ddp else model # always contains the "raw" unwrapped model
 
 def get_lr(it):
-    # 1) linear warmup for warmup_iters steps
+    # 1) réchauffement linéaire pendant warmup_iters étapes
     if it < warmup_steps:
         return max_lr * (it+1) / warmup_steps
-    # 2) if it > lr_decay_iters, return min learning rate
+    # 2) si it > lr_decay_iters, retourne le taux d'apprentissage minimum
     if it > max_steps:
         return min_lr
-    # 3) in between, use cosine decay down to min learning rate
+    # 3) entre les deux, utilise une décroissance en cosinus jusqu'au taux minimum
     decay_ratio = (it - warmup_steps) / (max_steps - warmup_steps)
     assert 0 <= decay_ratio <= 1
-    coeff = 0.5 * (1.0 + math.cos(math.pi * decay_ratio)) # coeff starts at 1 and goes to 0
+    coeff = 0.5 * (1.0 + math.cos(math.pi * decay_ratio)) # le coefficient commence à 1 et descend à 0
     return min_lr + coeff * (max_lr - min_lr)
 
-# optimize!
+# optimisation !
 optimizer = raw_model.configure_optimizers(weight_decay=0.1, learning_rate=6e-4, device=device)
 
-# create the log directory we will write checkpoints to and log to
+# crée le répertoire de logs où nous écrirons les points de contrôle et les logs
 log_dir = "log"
 os.makedirs(log_dir, exist_ok=True)
 log_file = os.path.join(log_dir, f"log.txt")
-with open(log_file, "w") as f: # open for writing to clear the file
+with open(log_file, "w") as f: # ouverture en écriture pour vider le fichier
     pass
 
 for step in range(max_steps):
@@ -546,7 +546,7 @@ for step in range(max_steps):
             with open(log_file, "a") as f:
                 f.write(f"{step} val {val_loss_accum.item():.4f}\n")
             if step > 0 and (step % 5000 == 0 or last_step):
-                # optionally write model checkpoints
+                # écriture optionnelle des checkpoints du modèle
                 checkpoint_path = os.path.join(log_dir, f"model_{step:05d}.pt")
                 checkpoint = {
                     'model': raw_model.state_dict(),
@@ -554,41 +554,38 @@ for step in range(max_steps):
                     'step': step,
                     'val_loss': val_loss_accum.item()
                 }
-                # you might also want to add optimizer.state_dict() and
-                # rng seeds etc., if you wanted to more exactly resume training
                 torch.save(checkpoint, checkpoint_path)
 
-    # do one step of the optimization
+    # effectue une étape d'optimisation
     model.train()
     optimizer.zero_grad()
     loss_accum = 0.0
     for micro_step in range(grad_accum_steps):
         x, y = train_loader.next_batch()
         x, y = x.to(device), y.to(device)
-        # added after video, this field is also used by the forward pass.
         if ddp:
             model.require_backward_grad_sync = (micro_step == grad_accum_steps - 1)
         with torch.autocast(device_type=device_type, dtype=torch.bfloat16):
             logits, loss = model(x, y)
-        # we have to scale the loss to account for gradient accumulation,
-        # because the gradients just add on each successive backward().
-        # addition of gradients corresponds to a SUM in the objective, but
-        # instead of a SUM we want MEAN. Scale the loss here so it comes out right
+        # nous devons mettre à l'échelle la perte pour tenir compte de l'accumulation du gradient,
+        # car les gradients s'ajoutent simplement à chaque backward() successif.
+        # l'addition des gradients correspond à une SOMME dans l'objectif, mais
+        # au lieu d'une SOMME nous voulons une MOYENNE. On met à l'échelle la perte ici pour que le résultat soit correct
         loss = loss / grad_accum_steps
         loss_accum += loss.detach()
         loss.backward()
     if ddp:
         dist.all_reduce(loss_accum, op=dist.ReduceOp.AVG)
     norm = torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
-    # determine and set the learning rate for this iteration
+    # détermine et définit le taux d'apprentissage pour cette itération
     lr = get_lr(step)
     for param_group in optimizer.param_groups:
         param_group['lr'] = lr
     optimizer.step()
     if device_type == "cuda":
-        torch.cuda.synchronize() # wait for the GPU to finish work
+        torch.cuda.synchronize() # attend que le GPU termine son travail
     t1 = time.time()
-    dt = t1 - t0 # time difference in seconds
+    dt = t1 - t0 # différence de temps en secondes
     tokens_processed = train_loader.B * train_loader.T * grad_accum_steps * ddp_world_size
     tokens_per_sec = tokens_processed / dt
     if master_process:
