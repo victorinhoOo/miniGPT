@@ -55,15 +55,18 @@ class CausalSelfAttention(nn.Module):
         # Calcul des scores d'attention
         # 1. Multiplication matricielle entre q et k pour obtenir les scores bruts
         # 2. Mise à l'échelle pour éviter que les gradients ne soient trop grands
-        att = (q @ k.transpose(-2, -1)) * (1.0 / math.sqrt(k.size(-1)))
+        #att = (q @ k.transpose(-2, -1)) * (1.0 / math.sqrt(k.size(-1)))
         # Application du masque causal : on remplace par -inf les positions futures 
         # (cela permet de ne pas integrer les mots futurs dans le calcul d'attention)
-        att = att.masked_fill(self.bias[:, :, :T, :T] == 0, float("-inf"))
+        #att = att.masked_fill(self.bias[:, :, :T, :T] == 0, float("-inf"))
         # Normalisation par softmax pour obtenir des poids d'attention entre 0 et 1
-        att = F.softmax(att, dim=-1)
+        #att = F.softmax(att, dim=-1)
 
         # Calcul de la sortie en multipliant les poids d'attention avec les valeurs
-        y = att @ v
+        #y = att @ v
+
+        y = F.scaled_dot_product_attention(q, k, v, is_causal=True)
+
         # Réorganisation des dimensions pour obtenir le format attendu
         y = y.transpose(1, 2).contiguous().view(B, T, C)
         # Projection finale pour combiner les résultats de toutes les têtes
@@ -362,10 +365,13 @@ torch.manual_seed(1337)
 if torch.cuda.is_available():
     torch.cuda.manual_seed(1337)
 
-train_loader = DataLoaderLite(B=4, T=32)
+train_loader = DataLoaderLite(B=2, T=1024)
 
-model = GPT(GPTConfig())
+torch.set_float32_matmul_precision('high')
+
+model = GPT(GPTConfig(vocab_size=50304))
 model.to(device)
+model = torch.compile(model)
 
 
 # optimisation !
@@ -376,7 +382,8 @@ for i in range(50):
     x = x.to(device)
     y = y.to(device)
     optimizer.zero_grad()
-    logits, loss = model(x, y)
+    with torch.autocast(device_type=device, dtype=torch.bfloat16):
+        logits, loss = model(x, y)
     loss.backward()
     optimizer.step()
     print(f"step {i} loss: {loss.item()}")
