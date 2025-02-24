@@ -1,4 +1,7 @@
 # miniGPT
+![Python](https://img.shields.io/badge/python-3.8%2B-blue)
+![Model Size](https://img.shields.io/badge/model_size-125M-lightgrey)
+![Dataset](https://img.shields.io/badge/dataset-FineWeb--Edu-blue)
 
 This repository contains a lightweight autoregressive language model implementation with two training phases:
 1. Pre-training on FineWeb dataset
