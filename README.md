@@ -1,6 +1,6 @@
 # miniGPT
 
-This repository contains a GPT-2 model implementation with two training phases:
+This repository contains a lightweight autoregressive language model implementation with two training phases:
 1. Pre-training on FineWeb dataset
 2. Finetuning for conversational abilities
 
