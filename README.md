@@ -7,13 +7,12 @@ This repository contains the code to train and finetune autoregressive language 
 
 I used it to train a GPT-2 style model with two training phases:
 1. Pre-training on FineWeb Edu dataset
-2. Finetuning for conversational abilities on Dolly Dataset
+2. Finetuning for conversational abilities on the openAssistant dataset
 
 ## 📋 Table of Contents
 
 * [Description](#description)
 * [Architecture](#architecture)
-* [Dataset](#dataset)
 * [Training](#training)
 * [Generation](#generation)
 * [Installation](#installation)
@@ -89,18 +88,5 @@ The resulting model has 124M trainable parameters
 ### Phase 2: Finetuning
 - **Dataset**: databricks/dolly-15k 
 - **Purpose**: Convert to conversational assistant
-- **Training time**: ~30 minutes on A100
+- **Training time**: 8 hours on my RTX 3060
 - **Output**: Final assistant model
-
-## Datasets
-
-### FineWeb Edu (Pre-training)
-- High-quality multilingual text corpus
-- Processed into .npy tokenized files
-- Used for general language capabilities
-
-### Instruction Dataset (Finetuning)
-- ~50K question-answer pairs
-- Focused on helpful dialogue
-- Used to teach conversational abilities
-
