@@ -1,8 +1,13 @@
 # miniGPT
+![Python](https://img.shields.io/badge/python-3.8%2B-blue)
+![Model Size](https://img.shields.io/badge/model_size-125M-lightgrey)
+![Dataset](https://img.shields.io/badge/dataset-FineWeb--Edu-blue)
 
-This repository contains a GPT-2 model implementation with two training phases:
-1. Pre-training on FineWeb dataset
-2. Finetuning for conversational abilities
+This repository contains the code to train and finetune autoregressive language models like ChatGPT from scratch.
+
+I used it to train a GPT-2 style model with two training phases:
+1. Pre-training on FineWeb Edu dataset
+2. Finetuning for conversational abilities on Dolly Dataset
 
 ## 📋 Table of Contents
 
@@ -15,9 +20,11 @@ This repository contains a GPT-2 model implementation with two training phases:
 
 ## Description
 
-This project implements a GPT-2 style language model with two stages:
+Using this repo i implemented a GPT-2 style language model with two stages:
 - First trained on FineWeb Edu for general language understanding
 - Then finetuned on instruction data to create a helpful assistant
+
+But i can be easily adapted to your own datasets and needs. 
 
 
 ## 🏗️ Architecture
@@ -34,7 +41,7 @@ The model is based on the transformer architecture (only the decoder part) from 
 
 <br/>
 
-Here are the main parameters of the architecture:
+Here are the main parameters of the architecture i used for my own implementation :
 
 <table>
 	<thead>
@@ -76,11 +83,11 @@ The resulting model has 124M trainable parameters
 ### Phase 1: Pre-training
 - **Dataset**: FineWeb Edu
 - **Purpose**: Learn general language understanding
-- **Training time**: Several days on A100
+- **Training time**: 4 days on A100 using Lambda Cloud https://cloud.lambdalabs.com/
 - **Output**: Base model checkpoint
 
 ### Phase 2: Finetuning
-- **Dataset**: HuggingFaceH4/instruction-dataset
+- **Dataset**: databricks/dolly-15k 
 - **Purpose**: Convert to conversational assistant
 - **Training time**: ~30 minutes on A100
 - **Output**: Final assistant model
