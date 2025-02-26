@@ -4,102 +4,82 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import torch
 import tiktoken
-from model.gpt import GPT, GPTConfig
-
-def load_model(checkpoint_path):
-    """Charge le modèle depuis un checkpoint."""
-    print(f"Loading checkpoint: {checkpoint_path}")
-    checkpoint = torch.load(checkpoint_path)
-    model_config = checkpoint['config']
-    model = GPT(model_config)
-    model.load_state_dict(checkpoint['model'])
-    return model
+from torch.nn import functional as F
+from model.gpt import GPT
 
 def generate(
     model,
     prompt,
-    max_new_tokens=150,
+    num_samples=5,
+    max_new_tokens=100,
     temperature=0.8,
-    top_k=200,
+    top_k=50,
     device='cuda'
 ):
-    """Génère du texte à partir d'un prompt.
-    
-    Args:
-        model: Le modèle GPT
-        prompt: Texte d'amorce
-        max_new_tokens: Nombre maximum de tokens à générer
-        temperature: Contrôle la "créativité" (0.0 = déterministe, 1.0 = aléatoire)
-        top_k: Nombre de tokens parmi lesquels choisir à chaque étape
-        device: Dispositif de calcul ('cuda' ou 'cpu')
-    """
+    """Génère du texte à partir d'un prompt en utilisant GPT-2."""
     model.eval()
     model.to(device)
     
     # Encode le prompt en tokens
     enc = tiktoken.get_encoding("gpt2")
-    tokens = torch.tensor(enc.encode(prompt)).unsqueeze(0).to(device)
+    tokens = torch.tensor(enc.encode(prompt), dtype=torch.long)
+    tokens = tokens.unsqueeze(0).repeat(num_samples, 1)  # (num_samples, seq_len)
+    tokens = tokens.to(device)
     
     # Génère token par token
     with torch.no_grad():
-        for _ in range(max_new_tokens):
-            # Si la séquence est trop longue, on garde les derniers tokens
-            if tokens.size(1) > model.config.block_size:
-                tokens = tokens[:, -model.config.block_size:]
-            
-            # Prédit le prochain token
-            logits, _ = model(tokens)
+        while tokens.size(1) < max_new_tokens:
+            # Forward pass
+            outputs = model(tokens)  # (B, T, vocab_size)
+            if isinstance(outputs, tuple):
+                logits = outputs[0]  # Si le modèle retourne un tuple, prend le premier élément
+            else:
+                logits = outputs
+                
+            # Prend le dernier token et applique la température
             logits = logits[:, -1, :] / temperature
             
-            # Applique le top-k sampling
+            # Top-k sampling
             v, _ = torch.topk(logits, min(top_k, logits.size(-1)))
             logits[logits < v[:, [-1]]] = float('-inf')
-            probs = torch.nn.functional.softmax(logits, dim=-1)
+            probs = F.softmax(logits, dim=-1)
             
             # Échantillonne le prochain token
             next_token = torch.multinomial(probs, num_samples=1)
             tokens = torch.cat([tokens, next_token], dim=1)
             
-            # Décode et affiche le token généré
-            generated_text = enc.decode(tokens[0].tolist())
-            print(generated_text, end='', flush=True)
+            # Affiche le texte généré
+            for i in range(num_samples):
+                generated_text = enc.decode(tokens[i].tolist())
+                print(f"\nSample {i+1}:", generated_text, end='', flush=True)
             
-            # Arrête si on génère un caractère de fin
-            if next_token.item() == enc.eot_token:
+            print('\n' + '-'*50)
+            
+            # Arrête si on génère un EOT
+            if (next_token == enc.eot_token).any():
                 break
     
-    print('\n' + '-'*50 + '\n')
-    return generated_text
+    return [enc.decode(tokens[i].tolist()) for i in range(num_samples)]
 
 def main():
-    # Configuration
-    checkpoint_path = "log/model_06000.pt"  # Dernier checkpoint
+    print("Chargement du modèle GPT-2 XL (1.3B paramètres)...")
+    model = GPT.from_pretrained('gpt2-xl')  # Version 1.3B
     device = "cuda" if torch.cuda.is_available() else "cpu"
     
-    # Charge le modèle
-    model = load_model(checkpoint_path)
+    # Un seul prompt
+    prompt = "Python is a programming language"
     
-    # Prompts de test
-    prompts = [
-        "La France est un pays",
-        "L'intelligence artificielle permet de",
-        "Le but de ce projet est de",
-        "Dans un avenir proche, les robots",
-        "La programmation en Python"
-    ]
-    
-    # Génère du texte pour chaque prompt
-    for prompt in prompts:
-        print(f"\nPrompt: {prompt}")
-        print("-"*50)
-        generate(
-            model=model,
-            prompt=prompt,
-            max_new_tokens=150,
-            temperature=0.8,
-            top_k=200,
-            device=device
-        )
+    print(f"\nPrompt: {prompt}")
+    print("-"*50)
+    generate(
+        model=model,
+        prompt=prompt,
+        num_samples=3,        
+        max_new_tokens=150,   # Un peu plus long car modèle plus puissant
+        temperature=0.7,      # Un peu plus bas pour plus de cohérence
+        top_k=50,
+        device=device
+    )
 
 if __name__ == '__main__':
     main()
