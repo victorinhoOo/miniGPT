@@ -3,25 +3,11 @@
 ![Model Size](https://img.shields.io/badge/model_size-125M-lightgrey)
 ![Dataset](https://img.shields.io/badge/dataset-FineWeb--Edu-blue)
 
-This repository contains the code to train and finetune autoregressive language models like ChatGPT from scratch.
+This repository contains the code to train autoregressive language models like ChatGPT from scratch.
 
 I used it to train a GPT-2 style model with two training phases:
-1. Pre-training on FineWeb Edu dataset
-2. Finetuning for conversational abilities on the openAssistant dataset
-
-## 📋 Table of Contents
-
-* [Description](#description)
-* [Architecture](#architecture)
-* [Training](#training)
-* [Generation](#generation)
-* [Installation](#installation)
-
-## Description
-
-Using this repo i implemented a GPT-2 style language model with two stages:
-- First trained on FineWeb Edu for general language understanding
-- Then finetuned on instruction data to create a helpful assistant
+1. Pre-training on FineWeb Edu dataset for general language understanding
+2. Finetuning for conversational abilities on the openAssistant dataset (work in progress)
 
 But i can be easily adapted to your own datasets and needs. 
 
@@ -52,15 +38,15 @@ Here are the main parameters of the architecture i used for my own implementatio
 	<tbody>
 		<tr>
 			<td align="left">Embedding dimension</td>
-			<td align="center">768</td>
+			<td align="center">1024</td>
 		</tr>
 		<tr>
 			<td align="left">Number of layers</td>
-			<td align="center">12</td>
+			<td align="center">24</td>
 		</tr>
 		<tr>
 			<td align="left">Number of heads</td>
-			<td align="center">12</td>
+			<td align="center">16</td>
 		</tr>
 		<tr>
 			<td align="left">Context length</td>
@@ -73,20 +59,41 @@ Here are the main parameters of the architecture i used for my own implementatio
 	</tbody>
 </table>
 
-The resulting model has 124M trainable parameters
+The resulting model has 350M trainable parameters
 
 <br/>
 
-## Training Process
+## Training
 
 ### Phase 1: Pre-training
 - **Dataset**: FineWeb Edu
 - **Purpose**: Learn general language understanding
-- **Training time**: 4 days on A100 using Lambda Cloud https://cloud.lambdalabs.com/
+- **Training time**: 5 days on A100 using Lambda Cloud https://cloud.lambdalabs.com/
 - **Output**: Base model checkpoint
 
 ### Phase 2: Finetuning
-- **Dataset**: databricks/dolly-15k 
-- **Purpose**: Convert to conversational assistant
-- **Training time**: 8 hours on my RTX 3060
-- **Output**: Final assistant model
+WIP, will update later.
+
+  ## Generation
+
+  Here are some of the results I get when prompting the model with "Python is a programming language". <br> Right now the model can't respond to questions, but I'm hoping it will be soon once finetuning is done ! 
+
+  ```console
+Sample 1: Python is a programming language designed by Guido van Rossum. 
+It is a general purpose programming language with a wide range of applications. 
+In Python, variables and functions are organized in packages and functions are 
+named in the format that the programmer chooses.
+```
+```console
+Sample 2: Python is a programming language that many consider to be the most popular 
+one in the world, and the one that is most often used in web development today. 
+It is known for being fast and being able to handle large amounts of data.
+```
+```console
+Sample 3: Python is a programming language that is used to create applications, 
+web servers and other programming platforms. Python is one of the most 
+popular programming languages, especially among programmers who use it to 
+create web sites and applications.
+```
+
+
