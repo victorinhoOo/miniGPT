@@ -1,6 +1,6 @@
 # miniGPT
 ![Python](https://img.shields.io/badge/python-3.8%2B-blue)
-![Model Size](https://img.shields.io/badge/model_size-125M-lightgrey)
+![Model Size](https://img.shields.io/badge/model_size-350M-lightgrey)
 ![Dataset](https://img.shields.io/badge/dataset-FineWeb--Edu-blue)
 
 This repository contains the code to train autoregressive language models like ChatGPT from scratch.
@@ -78,22 +78,22 @@ WIP, will update later.
 
   Here are some of the results I get when prompting the model with "Python is a programming language". <br> Right now the model can't respond to questions, but I'm hoping it will be soon once finetuning is done ! 
 
+
+  
+
+
+
   ```console
-Sample 1: Python is a programming language designed by Guido van Rossum. 
-It is a general purpose programming language with a wide range of applications. 
-In Python, variables and functions are organized in packages and functions are 
-named in the format that the programmer chooses.
+Sample 1: Python is a programming language and a development platform. It is one of the leading development environments for the
+web, and has been adopted by many leading developers, including Microsoft.
 ```
 ```console
-Sample 2: Python is a programming language that many consider to be the most popular 
-one in the world, and the one that is most often used in web development today. 
-It is known for being fast and being able to handle large amounts of data.
+Sample 2: Python is a programming language with a huge ecosystem, with over 40,000 libraries for its various programming languages.
+It has been around since 1998, and is widely used.
 ```
 ```console
-Sample 3: Python is a programming language that is used to create applications, 
-web servers and other programming platforms. Python is one of the most 
-popular programming languages, especially among programmers who use it to 
-create web sites and applications.
+Sample 3: Python is a programming language written in C++ and, as such,
+can be used for any application that is written in C.
 ```
 
 
