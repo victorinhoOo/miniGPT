@@ -9,7 +9,7 @@ I used it to train a GPT-2 style model with two training phases:
 1. Pre-training on FineWeb Edu dataset for general language understanding
 2. Finetuning for conversational abilities on the openAssistant dataset (work in progress)
 
-But i can be easily adapted to your own datasets and needs. 
+But it can be easily adapted to your own datasets and needs. 
 
 
 ## 🏗️ Architecture
