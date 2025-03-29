@@ -15,23 +15,23 @@ from model.gpt import GPT, GPTConfig
 from data.dataloader import DataLoaderLite
 
 # Configuration d'entraînement
-B = 32                    # Batch , à ajuster en fonction de la puissance de la carte graphique en restant en puissances de 2
-T = 1024                  # Longueur de la séquence
-total_batch_size = 524288 # 2**19 - Optimisé pour 1 GPU A100
+B = 32                    # Taille du lot par GPU
+T = 1024                  # Longueur de contexte pour les séquences
+total_batch_size = 524288 # Taille totale du lot (2**19)
 
 # Paramètres d'apprentissage
-max_lr = 3e-4            # Taux d'apprentissage maximum
-min_lr = max_lr * 0.1    # Taux d'apprentissage minimum
-warmup_steps = 300       # Nombre de pas de réchauffement
-max_steps = 6000         # Nombre total de pas
+max_lr = 3e-4            # Taux d'apprentissage initial
+min_lr = max_lr * 0.1    # Taux d'apprentissage final
+warmup_steps = 300       # Période d'échauffement pour le taux d'apprentissage
+max_steps = 6000         # Nombre maximal d'itérations
 
-# Optimisations
-use_compile = True       # torch.compile()
+# Optimisations des performances
+use_compile = True       # Utilisation de torch.compile pour accélérer l'exécution
 torch.backends.cuda.matmul.allow_tf32 = True
 torch.backends.cudnn.benchmark = True
 torch.set_float32_matmul_precision('high')
 
-# Configuration DDP
+# Configuration du mode distribué
 ddp = int(os.environ.get('RANK', -1)) != -1
 if ddp:
     init_process_group(backend='nccl')
@@ -51,7 +51,7 @@ else:
 # Initialisation du tokenizer
 enc = tiktoken.get_encoding("gpt2")
 
-# Création des dataloaders
+# Création des chargeurs de données
 grad_accum_steps = total_batch_size // (B * T * ddp_world_size)
 train_loader = DataLoaderLite(
     B=B, T=T,
@@ -68,7 +68,7 @@ val_loader = DataLoaderLite(
 )
 
 def get_lr(it):
-    """Calcule le learning rate pour l'itération courante."""
+    """Calcule le taux d'apprentissage selon une planification cosinus."""
     if it < warmup_steps:
         return max_lr * it / warmup_steps
     if it > max_steps:
@@ -78,7 +78,7 @@ def get_lr(it):
     return min_lr + coeff * (max_lr - min_lr)
 
 def main():
-    # Création du modèle
+    # Initialisation du modèle
     model = GPT(GPTConfig())
     model.to(device)
     if use_compile:
@@ -86,7 +86,7 @@ def main():
     if ddp:
         model = DDP(model, device_ids=[ddp_local_rank])
     
-    # Optimiseur
+    # Configuration de l'optimiseur
     raw_model = model.module if ddp else model
     optimizer = raw_model.configure_optimizers(
         weight_decay=0.1,
@@ -94,17 +94,17 @@ def main():
         device=device
     )
 
-    # Dossier de logs
+    # Préparation du dossier de journalisation
     log_dir = "log"
     os.makedirs(log_dir, exist_ok=True)
     log_file = os.path.join(log_dir, "log.txt")
 
-    # Boucle d'entraînement
+    # Boucle principale d'entraînement
     for step in range(max_steps):
         t0 = time.time()
         last_step = (step == max_steps - 1)
 
-        # Validation
+        # Phase de validation périodique
         if step % 250 == 0 or last_step:
             model.eval()
             val_loader.reset()
@@ -126,7 +126,7 @@ def main():
                 with open(log_file, "a") as f:
                     f.write(f"{step} val {val_loss_accum.item():.4f}\n")
 
-                # Sauvegarde du modèle
+                # Sauvegarde périodique du modèle
                 if step > 0 and (step % 5000 == 0 or last_step):
                     checkpoint = {
                         'model': raw_model.state_dict(),
@@ -136,7 +136,7 @@ def main():
                     }
                     torch.save(checkpoint, os.path.join(log_dir, f"model_{step:05d}.pt"))
 
-        # Entraînement
+        # Phase d'entraînement
         model.train()
         optimizer.zero_grad()
         loss_accum = 0.0
@@ -158,14 +158,14 @@ def main():
         if ddp:
             dist.all_reduce(loss_accum, op=dist.ReduceOp.AVG)
 
-        # Gradient clipping et optimisation
+        # Optimisation et mise à jour des poids
         norm = torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
         lr = get_lr(step)
         for param_group in optimizer.param_groups:
             param_group['lr'] = lr
         optimizer.step()
 
-        # Logging
+        # Mesure de performance et journalisation
         dt = time.time() - t0
         tokens_processed = B * T * grad_accum_steps * ddp_world_size
         tokens_per_sec = tokens_processed / dt

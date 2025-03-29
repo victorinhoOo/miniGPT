@@ -12,39 +12,37 @@ import wandb
 from tqdm import tqdm
 from torch.cuda.amp import autocast, GradScaler
 
-# Configuration optimisée pour OpenAssistant sur A100
+# Configuration adaptée aux ressources matérielles disponibles
 config = {
-    'batch_size': 4,                    
-    'gradient_accumulation_steps': 8,    
-    'learning_rate': 1e-6,              # Learning rate réduit
-    'num_epochs': 2,                    # Réduit car dataset plus grand
-    'max_length': 512,                  
-    'warmup_steps': 2000,               # Augmenté pour dataset plus grand
-    'weight_decay': 0.01,               # Weight decay réduit
-    'checkpoint_dir': 'checkpoints/oasst',
+    'batch_size': 1,                     # Taille de lot adaptée pour 6GB VRAM
+    'gradient_accumulation_steps': 32,   # Accumulation pour simuler des lots plus grands
+    'learning_rate': 1e-6,               
+    'num_epochs': 3,                    
+    'max_length': 256,                   # Longueur de séquence adaptée aux contraintes mémoire
+    'warmup_steps': 100,                
+    'weight_decay': 0.01,
+    'checkpoint_dir': 'checkpoints/local',
     'log_interval': 5,
     'max_grad_norm': 0.5,
-    'model_name': 'gpt2-xl'
+    'model_name': 'gpt2'                 # Utilisation du modèle base
 }
 
-# Ajouter la configuration mémoire PyTorch
-torch.cuda.set_per_process_memory_fraction(0.95)  # Utiliser 95% de la VRAM
-os.environ['PYTORCH_CUDA_ALLOC_CONF'] = 'expandable_segments:True'  # Éviter la fragmentation
-
-# Optimisations A100
-device = "cuda" if torch.cuda.is_available() else "cpu"
-torch.backends.cuda.matmul.allow_tf32 = True
+# Optimisations pour environnement à ressources limitées
+torch.cuda.set_per_process_memory_fraction(0.85)  # Réservation mémoire
 torch.backends.cudnn.benchmark = True
+
+# Détection du matériel disponible
+device = "cuda" if torch.cuda.is_available() else "cpu"
 
 class OpenAssistantDataset(Dataset):
     def __init__(self, split="train"):
-        print("Loading OpenAssistant dataset...")
+        print("Chargement du jeu de données OpenAssistant...")
         full_dataset = load_dataset("OpenAssistant/oasst1")
         
-        # Split train/val (90/10)
+        # Séparation entraînement/validation (90/10)
         dataset_dict = full_dataset['train'].train_test_split(test_size=0.1, seed=42)
         self.dataset = dataset_dict['train' if split == "train" else 'test']
-        print(f"Dataset size: {len(self.dataset)}")
+        print(f"Taille du jeu de données: {len(self.dataset)}")
         
         self.tokenizer = GPT2Tokenizer.from_pretrained('gpt2')
         self.tokenizer.pad_token = self.tokenizer.eos_token
@@ -55,12 +53,12 @@ class OpenAssistantDataset(Dataset):
     def __getitem__(self, idx):
         item = self.dataset[idx]
         
-        # Format simple
+        # Formatage pour l'apprentissage conversationnel
         role = "Assistant" if item['role'] == 'assistant' else "User"
         text = item['text'].strip()
         chat = f"{role}: {text}\n{self.tokenizer.eos_token}"
         
-        # Tokenisation avec padding
+        # Préparation des entrées pour le modèle
         encoding = self.tokenizer(
             chat,
             max_length=config['max_length'],
@@ -100,26 +98,26 @@ def save_checkpoint(model, optimizer, scheduler, scaler, epoch, val_loss, is_bes
 
 def train():
     try:
-        # Chargement du modèle XL
-        print(f"Loading {config['model_name']} (1.3B parameters)...")
+        # Initialisation du modèle
+        print(f"Chargement du modèle {config['model_name']}")
         model = GPT.from_pretrained(config['model_name'])
         
-        # Initialisation de wandb pour le suivi
+        # Configuration du suivi d'expérience
         wandb.init(
             project="gpt2-xl-chatbot",
             config=config,
-            notes="Finetuning GPT-2 XL (1.3B) on OpenAssistant"
+            notes="Adaptation de GPT-2 pour dialogue avec OpenAssistant"
         )
         
-        # Monitoring de la VRAM
-        print(f"GPU Memory before loading model: {torch.cuda.memory_allocated()/1e9:.2f}GB")
+        # Surveillance de l'utilisation mémoire
+        print(f"Mémoire GPU avant chargement: {torch.cuda.memory_allocated()/1e9:.2f}GB")
         model.to(device)
-        print(f"GPU Memory after loading model: {torch.cuda.memory_allocated()/1e9:.2f}GB")
+        print(f"Mémoire GPU après chargement: {torch.cuda.memory_allocated()/1e9:.2f}GB")
         
-        # Création des dossiers
+        # Préparation de l'environnement
         os.makedirs(config['checkpoint_dir'], exist_ok=True)
         
-        # Chargement du dataset
+        # Préparation des données
         train_dataset = OpenAssistantDataset("train")
         val_dataset = OpenAssistantDataset("validation")
         
@@ -139,7 +137,7 @@ def train():
             pin_memory=True
         )
         
-        # Optimiseur et scheduler
+        # Configuration de l'optimisation
         optimizer = model.configure_optimizers(
             weight_decay=config['weight_decay'],
             learning_rate=config['learning_rate'],
@@ -153,7 +151,7 @@ def train():
             num_training_steps=num_training_steps
         )
         
-        # Training loop
+        # Processus d'entraînement
         best_val_loss = float('inf')
         scaler = GradScaler()
         
@@ -161,29 +159,29 @@ def train():
             model.train()
             total_loss = 0
             
-            progress_bar = tqdm(train_loader, desc=f'Epoch {epoch+1}/{config["num_epochs"]}')
+            progress_bar = tqdm(train_loader, desc=f'Époque {epoch+1}/{config["num_epochs"]}')
             
             for step, batch in enumerate(progress_bar):
-                # Déplacer les données sur GPU
+                # Transfert des données sur GPU
                 input_ids = batch['input_ids'].to(device)
                 attention_mask = batch['attention_mask'].to(device)
                 labels = batch['labels'].to(device)
                 
-                # Forward pass avec mixed precision
+                # Calcul avec précision mixte
                 with autocast():
                     logits, loss = model(input_ids, targets=labels)
                     loss = loss / config['gradient_accumulation_steps']
                 
-                # Backward pass
+                # Rétropropagation
                 scaler.scale(loss).backward()
                 
-                # Gradient accumulation
+                # Accumulation de gradients
                 if (step + 1) % config['gradient_accumulation_steps'] == 0:
-                    # Gradient clipping
+                    # Écrêtage des gradients
                     scaler.unscale_(optimizer)
                     torch.nn.utils.clip_grad_norm_(model.parameters(), config['max_grad_norm'])
                     
-                    # Optimizer step
+                    # Mise à jour des poids
                     scaler.step(optimizer)
                     scaler.update()
                     scheduler.step()
@@ -191,7 +189,7 @@ def train():
                 
                 total_loss += loss.item()
                 
-                # Logging
+                # Enregistrement des métriques
                 if step % config['log_interval'] == 0:
                     wandb.log({
                         'train_loss': loss.item(),
@@ -202,7 +200,7 @@ def train():
                     
                 progress_bar.set_postfix({'loss': loss.item()})
             
-            # Validation avec mixed precision
+            # Évaluation du modèle
             model.eval()
             val_loss = 0
             
@@ -218,7 +216,7 @@ def train():
             val_loss = val_loss / len(val_loader)
             wandb.log({'val_loss': val_loss, 'epoch': epoch})
             
-            # Sauvegardes
+            # Gestion des points de sauvegarde
             is_best = val_loss < best_val_loss
             if is_best:
                 best_val_loss = val_loss
@@ -234,7 +232,7 @@ def train():
             )
             
     except KeyboardInterrupt:
-        print("\nTraining interrupted. Saving checkpoint...")
+        print("\nEntraînement interrompu. Sauvegarde en cours...")
         save_checkpoint(
             model=model,
             optimizer=optimizer,
